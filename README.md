@@ -18,6 +18,7 @@
 - [First-Run Walkthrough](#-first-run-walkthrough)
 - [Keyboard Shortcuts (TUI Cheatsheet)](#-keyboard-shortcuts-tui-cheatsheet)
 - [Evidence-Grounded Resume & Match System](#-evidence-grounded-resume--match-system)
+  - [Auto-Extracting Evidence from Your Codebases (`resume-codebase-extraction`)](#-auto-extracting-evidence-from-your-codebases-resume-codebase-extraction)
 - [Generation Backends](#-generation-backends)
 - [Supported Job Providers](#-supported-job-providers)
 - [Configuration Guide](#-configuration-guide)
@@ -44,6 +45,7 @@ Job hunting today is fragmented: you check five different aggregators, get flood
 - 🖥️ **Full-Featured Terminal UI**: Beautiful dark-mode dashboard built with Textual featuring real-time search filtering, multi-key sorting (match score, salary, date posted, location), detail views, and saved bookmarks.
 - 🛡️ **Anti-Bot & Direct ATS Scrapers**: Custom scrapers for Instahyre (concurrent JSON-LD detail extraction), Bayt (lightweight curl TLS fingerprint spoofing to bypass CDN blocks), and direct company board scrapers for Ashby, Greenhouse, and Lever.
 - 🔍 **Local Semantic AI Matcher (Optional)**: In addition to deterministic keyword demand scoring, local ONNX embeddings (`BAAI/bge-small-en-v1.5`) provide synonym similarity boosts without sending any data over the wire.
+- 🧬 **Git-Backed Evidence Extraction**: Bundles a standalone agent skill (`resume-codebase-extraction`) that performs line-level `git blame` scans on any repository you've worked on to extract truthful portfolio writeups and ATS-ready bullets in Auto-Switch's native format.
 - 🤖 **Universal Agent & API Support**: Works out of the box with your preferred coding agent CLI (**Antigravity**, **OpenCode**, **Claude Code**, **Pi**, **DeepSeek Harness**) or via direct LLM API key (**OpenAI**, **Anthropic**, **Google Gemini**, **DeepSeek**, **OpenRouter**).
 - 🔒 **Privacy-First Architecture**: Your personal identity, contact details, and work history live exclusively inside local files in `data/` (gitignored). No personal data is ever tracked in the repository.
 
@@ -187,7 +189,111 @@ Created automatically from `templates/profile.md`. Defines your contact info, ta
 Document your projects with **Full version** (5–7 bullets) and **Short version** (3–4 bullets) per project. Follow the formula:
 `[Action built/fixed] + [Technical mechanism / architecture] + [Verifiable outcome/metric]`
 
-> **Tip**: You can use the bundled `resume-codebase-extraction` agent skill inside your own git repositories to auto-extract honest, git-blame-backed bullets!
+---
+
+### 🔍 Auto-Extracting Evidence from Your Codebases (`resume-codebase-extraction`)
+
+Manually recalling what you built years ago or drafting resume bullet points from scratch often leads to vague descriptions or inflated claims that fail technical screens.
+
+Auto-Switch bundles a specialized, open-standard Agent Skill at [`.agents/skills/resume-codebase-extraction/`](.agents/skills/resume-codebase-extraction/SKILL.md) (conforming to the [Agent Skills](https://agentskills.io) standard). You can run this skill **inside any Git repository you have worked on** (past employers, client projects, open-source codebases) to automatically generate verifiable, line-level Git-backed evidence in the exact format required by Auto-Switch.
+
+```
+┌────────────────────────────────────────────────────────┐
+│  Run Agent Skill in your Project Repo                  │
+│  "Extract my contribution using resume-codebase-extraction"
+└──────────────────────────┬─────────────────────────────┘
+                           │
+                           ▼
+┌────────────────────────────────────────────────────────┐
+│  Phase 1 & 2: Author Context & Stack Analysis          │
+│  - Match author commit aliases & email addresses       │
+│  - Understand tech stack, architecture & dependencies  │
+└──────────────────────────┬─────────────────────────────┘
+                           │
+                           ▼
+┌────────────────────────────────────────────────────────┐
+│  Phase 3: Line-Level Authorship via `git blame`        │
+│  - Distinguishes files touched vs files truly owned    │
+│  - Classifies: Sole Author (>90%), Majority, Contributor│
+│  - Reads actual implementation code & edge cases       │
+└──────────────────────────┬─────────────────────────────┘
+                           │
+                           ▼
+┌────────────────────────────────────────────────────────┐
+│  Phase 4 & 5: Guardrails & ATS-Ready Generation        │
+│  - Zero internal leaks: strips file paths & error codes │
+│  - Strict anti-hallucination & metric verification     │
+└──────────────────────────┬─────────────────────────────┘
+                           │
+                           ▼
+          Produces Auto-Switch Ready Artifacts:
+          ├── PORTFOLIO.md        (Architectural overview)
+          └── RESUME_BULLETS.md   (Full & Short bullets)
+```
+
+#### How the Extraction Scan Works
+
+1. **Line-Level Authorship Analysis (`git blame`)**: Rather than relying on misleading commit counts (which often reflect minor touches, renames, or lint fixes), the skill executes:
+   ```bash
+   git blame -w --line-porcelain <file> | grep '^author ' | sort | uniq -c | sort -rn
+   ```
+   This isolates surviving line-level ownership into three strict tiers: **Sole author** (~90%+), **Majority author**, and **Contributor**.
+2. **Context Gathering Interview**: The agent asks you for your commit email aliases, team size, parts of the system you *did not* build (e.g. backend services, infra, or CMS owned by other teams), and explicit business metrics.
+3. **Architectural Translation (Confidentiality Guardrails)**: Senior interviewers care about system design and trade-offs, not internal identifiers. The skill translates raw code into architectural mechanisms (e.g., atomic cart operations, session re-authentication) while **strictly omitting internal file paths, function names, feature flags, ticket numbers, and error codes**.
+4. **Zero-Hallucination Policy**: Claims must trace to a verified `git blame` result, code actually read, or a metric explicitly confirmed by you. If a metric cannot be verified, it is omitted.
+
+#### What It Produces
+
+The skill generates the exact two files that populate an Auto-Switch project folder:
+
+| File | Contents & Purpose |
+| :--- | :--- |
+| **`PORTFOLIO.md`** | ~1-page architectural breakdown of the systems you owned, problems solved, tradeoffs made, and an explicit **collaboration model** stating what was *not* built by you (giving 15+ YOE readers confidence in your authenticity). |
+| **`RESUME_BULLETS.md`** | **Full version** (5–7 bullets) + **Short version** (3–4 bullets) following the `[Action] + [Mechanism] + [Outcome]` formula, plus a private **Notes for accuracy** section for interview prep. |
+
+#### Step-by-Step: How to Run the Extraction
+
+You can run the skill in any repository you want to analyze using your preferred coding agent:
+
+##### Option 1: Using OpenCode
+Navigate to the repository you worked on and pass the skill path:
+```bash
+cd /path/to/your-past-work-repo
+opencode --skill /path/to/auto-switch-tui/.agents/skills/resume-codebase-extraction
+```
+Prompt:
+> *"Extract my engineering contribution from this codebase using resume-codebase-extraction"*
+
+##### Option 2: Using Antigravity / Claude Code / Pi / Cursor
+Copy or symlink the skill folder into your project's `.agents/skills/` directory (or configure your harness's global skill search path):
+```bash
+# Copy skill into target project
+mkdir -p /path/to/your-past-work-repo/.agents/skills
+cp -r /path/to/auto-switch-tui/.agents/skills/resume-codebase-extraction /path/to/your-past-work-repo/.agents/skills/
+
+# Open target project and run your agent CLI
+cd /path/to/your-past-work-repo
+agy  # or claude / pi / cursor
+```
+Prompt:
+> *"Extract my engineering contribution from this codebase using resume-codebase-extraction"*
+
+##### Option 3: Copying Generated Artifacts into Auto-Switch
+Once the agent finishes, move the generated `PORTFOLIO.md` and `RESUME_BULLETS.md` into your Auto-Switch workspace under `data/work-experiences/<Company>/<Project>/`:
+
+```bash
+cd /path/to/auto-switch-tui
+mkdir -p "data/work-experiences/01. Acme Corp/Checkout Engine"
+mv /path/to/your-past-work-repo/PORTFOLIO.md "data/work-experiences/01. Acme Corp/Checkout Engine/"
+mv /path/to/your-past-work-repo/RESUME_BULLETS.md "data/work-experiences/01. Acme Corp/Checkout Engine/"
+```
+
+#### How Auto-Switch Uses Your Extracted Evidence
+
+Once placed in `data/work-experiences/`:
+- **Automated Skill Tier Mining**: Auto-Switch's evidence engine (`auto_switch/evidence.py`) automatically scans the corpus on startup. Mentions paired with senior authorship verbs (`designed`, `architected`, `owned`, `led`) automatically upgrade your skill proficiency tiers (`core`, `strong`, `secondary`).
+- **Grounded Match Calibration**: The job ranking algorithm uses your mined experience to score matching listings with high fidelity.
+- **Truthful 1-Click Tailoring**: When you press `r` (Resume) or `c` (Cover Letter) in the TUI, the `resume-builder` and `cover-letter` skills assemble documents sourced directly from your verified Git bullets—never hallucinating qualifications or metrics.
 
 ---
 
