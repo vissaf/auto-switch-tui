@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.venv/
+venv/
+ENV/
+build/
+dist/
+
+# Instance data (user profile, contact details, work experiences)
+# Auto-created on first run via onboarding wizard from templates/
+data/
+
+# Generated outputs
+output/
+*.pdf
+
+# Operating System & IDE
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Local cache & state
+.pytest_cache/
+.ruff_cache/
